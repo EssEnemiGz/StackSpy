@@ -1,0 +1,5 @@
+.DS_Store
+.env
+venv
+db_data
+ip_data
