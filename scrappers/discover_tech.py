@@ -1,4 +1,5 @@
 from typing import TypedDict, List, Dict
+import logging
 import asyncio
 import aiohttp
 import json
@@ -15,8 +16,8 @@ class SourcesPattern(TypedDict):
 with open("sources.json") as f:
     sources_json: Dict[str, SourcesPattern] = json.load(f)
 
+logging.basicConfig(filename='development.log', level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S") 
 results = {}
-semaphore = asyncio.Semaphore(20)
 
 class Analyzer:
     def html_body_parser(self, html_labels: List[str], html_body: str):
@@ -24,36 +25,47 @@ class Analyzer:
         in_html = re.search(rf"({html_key})", html_body) # Critical in resources, cause the html may be large
         return in_html
 
-async def fetch(domain: str, main_session, paths: List[str], technology: str, confidence: Dict[str, int]) -> None:
-    for route in paths:
-        async with semaphore:
-            try:
-                async with main_session.get(domain+route) as response:
-                    if response.status != 404:
-                        results[technology]["routes"] = True
-                        results[technology]["confidence"] += confidence.get("routes")
-                        break
-            except Exception as e:
-                print(e)
+class Networking:
+    def __init__(self, semaphore) -> None:
+        self.semaphore: asyncio.locks.Semaphore = semaphore
 
-async def main(url: str, domain_paths: Dict[str, List], confidences: Dict[str, Dict[str, int]]) -> bool:
+    async def fetch(self, url: str, main_session, tech: str) -> List[str]:
+        logging.info(f"Starting fetc() in domain {url}")
+        try:
+            async with self.semaphore:
+                async with main_session.get(url) as response:
+                    if response.status != 404:
+                        return [url, tech]
+        except Exception as e:
+            logging.error(f"Failed fetch() with exception: {e}")
+            return []
+        return [] 
+
+    async def get_html_body(self, url: str, main_session) -> str:
+        logging.info(f"Starting get_html_body() in domain {url}")
+        try:
+            async with self.semaphore:
+                async with main_session.get(url) as response:
+                    if response.status != 200:
+                        logging.error(f"get_html_body() failed with {response.status} code")
+                        return ""
+                    
+                    html_body = await response.text()
+                    return html_body
+        except Exception as e:
+            logging.error(f"Failed get_html_body() with exception {e}")
+            return ""
+
+async def main(url: str) -> bool:
     start_time = time.time()
     async with aiohttp.ClientSession() as session:
-        poll_request = [fetch(domain=url, main_session=session, paths=r, technology=idx, confidence=confidences[idx]) for idx, r in domain_paths.items()]
         async with session.get(url) as response:
             if response.status != 200:
                 return False
 
-            html_body = await response.text()
             for key, value in sources_json.items():
-                # Check the html
-                html_key = "|".join(value.get("html"))
-                in_html = re.search(rf"({html_key})", html_body) # Critical in resources, cause the html may be large
-
                 results.setdefault(key, {"confidence":0} )
-                actual_results = results[key]
-                if in_html: actual_results["html"] = True
-
+                actual_results = results[key] 
                 # Check the headers
                 headers = value.get("headers")
                 actual_results["headers"] = False
@@ -91,27 +103,35 @@ async def main(url: str, domain_paths: Dict[str, List], confidences: Dict[str, D
                 if actual_results.get("cookies"):
                     actual_results["confidence"] += confidence.get("cookies")
 
-        await asyncio.gather(*poll_request)
-
     end_time = time.time()
     print("Execution time: ", f"{end_time-start_time:.2f} seconds")
     return True
 
-if __name__ == "__main__":
+async def summoner():
     url = "https://blog.mozilla.org/en"
-    domain_paths = {}
-    confidences = {}
-    for idx, r in sources_json.items():
-        domain_paths.setdefault(idx, r.get("routes"))
-        confidences.setdefault(idx, r.get("confidence_weights"))
-        results.setdefault(idx, {
-            "confidence": 0,
-            "html": False,
-            "routes": False,
-            "cookies": False,
-            "headers": False
-        })
+    semaphore = asyncio.Semaphore(20)
+    network = Networking(semaphore)
+    checker = Analyzer()
+    route_tasks = []
+    html_body_results = []
 
-    asyncio.run(main(url, domain_paths, confidences))
+    async with aiohttp.ClientSession() as session:
+        html_body = await network.get_html_body(url, session)
+        for tech, info in sources_json.items():
+            paths = info.get("routes", [])
+            html_labels = info.get("html", [])
+            
+            analized_html = checker.html_body_parser(html_labels, html_body)
+            if analized_html:
+                html_body_results.append([True, tech])
 
+            for path in paths:
+                route_tasks.append(network.fetch(url+path, session, tech))
+
+        routes_result = await asyncio.gather(*route_tasks)
+        print(routes_result)
+        print(html_body_results)
     print(json.dumps(results, indent=4))
+
+if __name__ == "__main__": 
+    asyncio.run(summoner())
