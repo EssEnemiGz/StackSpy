@@ -1,4 +1,4 @@
-from typing import TypedDict, List, Dict, cast
+from typing import TypedDict, List, Dict
 import asyncio
 import aiohttp
 import json
@@ -12,25 +12,17 @@ class SourcesPattern(TypedDict):
     cookies: List[str]
     confidence_weights: Dict[str, int]
 
-sources_json: Dict[str, SourcesPattern] = {
-    "Wordpress": cast(SourcesPattern, {
-        "html": ["wp-content", "wp-includes"],
-        "routes": ["/wp-json/"],
-        "headers": {
-            "x-powered-by":"wp engine"
-        },
-        "cookies": ["wordpress_logged_in"],
-        "confidence_weights":{
-            "html":40,
-            "routes":30,
-            "headers":20,
-            "cookies":10
-        }
-    })
-}
+with open("sources.json") as f:
+    sources_json: Dict[str, SourcesPattern] = json.load(f)
 
 results = {}
 semaphore = asyncio.Semaphore(20)
+
+class Analyzer:
+    def html_body_parser(self, html_labels: List[str], html_body: str):
+        html_key = "|".join(html_labels)
+        in_html = re.search(rf"({html_key})", html_body) # Critical in resources, cause the html may be large
+        return in_html
 
 async def fetch(domain: str, main_session, paths: List[str], technology: str, confidence: Dict[str, int]) -> None:
     for route in paths:
@@ -66,20 +58,25 @@ async def main(url: str, domain_paths: Dict[str, List], confidences: Dict[str, D
                 headers = value.get("headers")
                 actual_results["headers"] = False
                 header_values = " ".join(response.headers.values()).lower()
-                confidence = any(v in header_values for v in map(str.lower, headers.values()))
-
+                confidence = False
+                for info in headers.values():
+                    if re.search(info, header_values):
+                        confidence = True
+                        break
+                
                 if confidence:
                     actual_results["headers"] = True
 
                 # Check the cookies
                 cookies = value.get("cookies")
-                actual_results["cookies"] = False
                 if len(response.cookies) > 0:
+                    actual_results["cookies"] = False
                     cookie_values = list(response.cookies.values())
                     confidence = any(cookie in cookie_values for cookie in cookies)
                     
                     if confidence:
                         actual_results["cookies"] = True
+
                 else:
                     actual_results["cookies"] = True
 
@@ -100,20 +97,21 @@ async def main(url: str, domain_paths: Dict[str, List], confidences: Dict[str, D
     print("Execution time: ", f"{end_time-start_time:.2f} seconds")
     return True
 
-url = "https://blog.mozilla.org/en"
-domain_paths = {}
-confidences = {}
-for idx, r in sources_json.items():
-    domain_paths.setdefault(idx, r.get("routes"))
-    confidences.setdefault(idx, r.get("confidence_weights"))
-    results.setdefault(idx, {
-        "confidence": 0,
-        "html": False,
-        "routes": False,
-        "cookies": False,
-        "headers": False
-    })
+if __name__ == "__main__":
+    url = "https://blog.mozilla.org/en"
+    domain_paths = {}
+    confidences = {}
+    for idx, r in sources_json.items():
+        domain_paths.setdefault(idx, r.get("routes"))
+        confidences.setdefault(idx, r.get("confidence_weights"))
+        results.setdefault(idx, {
+            "confidence": 0,
+            "html": False,
+            "routes": False,
+            "cookies": False,
+            "headers": False
+        })
 
-asyncio.run(main(url, domain_paths, confidences))
+    asyncio.run(main(url, domain_paths, confidences))
 
-print(json.dumps(results, indent=4))
+    print(json.dumps(results, indent=4))

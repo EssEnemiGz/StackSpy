@@ -1,0 +1,33 @@
+{
+  "Wordpress": {
+    "html": ["wp-content", "wp-includes"],
+    "routes": ["/wp-json/"],
+    "headers": {
+      "x-powered-by":"(wp engine)"
+    },
+    "cookies": ["wordpress_logged_in"],
+    "confidence_weights": {
+      "html": 40,
+      "routes": 30,
+      "headers": 20,
+      "cookies": 10
+    }
+  },
+  "Cloudflare": {
+    "html": ["https://static.cloudflareinsights.com"],
+    "routes": [],
+    "headers": {
+      "Server": "cloudflare",
+      "cf-ray": "[A-Za-z0-9]-ATL",
+      "cf-cache-status": "(HIT|MISS|DINAMYC)",
+      "cf-connecting-ip": "\\d+\\.\\d+\\.\\d+\\.\\d+"
+    },
+    "cookies": [],
+    "confidence_weights": {
+      "html": 10,
+      "routes": 0,
+      "headers": 90,
+      "cookies": 0
+    }
+  }
+}
