@@ -29,5 +29,50 @@
       "headers": 70,
       "cookies": 0
     }
+  },
+  "Shopify": {
+    "html": ["cdn.shopify.com", "Shopify.theme", "Shopify.checkout"],
+    "routes": ["/collections/", "/products/", "/cart"],
+    "headers_patterns": {
+      "x-shopify-stage": ".+",
+      "x-request-id": ".+"
+    },
+    "cookies_patterns": ["_shopify_fs", "_shopify_s"],
+    "confidence_weights": {
+      "html": 30,
+      "routes": 30,
+      "headers": 30,
+      "cookies": 10
+    }
+  },
+  "Joomla": {
+    "html": ["content=\"Joomla! - Open Source Content Management\"", "Joomla\\\\CMS"],
+    "routes": ["/index.php?option=", "/component/"],
+    "headers_patterns": {
+      "X-Content-Encoded-By": "Joomla",
+      "Set-Cookie": "joomla_[a-zA-Z0-9]+"
+    },
+    "cookies_patterns": ["joomla_[a-zA-Z0-9]+"],
+    "confidence_weights": {
+      "html": 40,
+      "routes": 30,
+      "headers": 20,
+      "cookies": 10
+    }
+  },
+  "Wix": {
+    "html": ["wix.com", "wixstatic.com", "WixSite"],
+    "routes": ["/_wix"], 
+    "headers_patterns": {
+      "x-wix-request-id": ".+",
+      "x-wix-debug": ".+"
+    },
+    "cookies_patterns": ["wixUID", "wixCIDX", "XSRF-TOKEN"],
+    "confidence_weights": {
+      "html": 30,
+      "routes": 20,
+      "headers": 40,
+      "cookies": 10
+    }
   }
 }
