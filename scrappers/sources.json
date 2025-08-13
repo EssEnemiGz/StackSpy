@@ -15,7 +15,7 @@
   },
   "Cloudflare": {
     "html": ["https://static.cloudflareinsights.com"],
-    "routes": [],
+    "routes": ["/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"],
     "headers": {
       "Server": "cloudflare",
       "cf-ray": "[A-Za-z0-9]-ATL",
