@@ -2,10 +2,10 @@
   "Wordpress": {
     "html": ["wp-content", "wp-includes"],
     "routes": ["/wp-json/"],
-    "headers": {
+    "headers_patterns": {
       "x-powered-by":"(wp engine)"
     },
-    "cookies": ["wordpress_logged_in"],
+    "cookies_patterns": ["wordpress_logged_in"],
     "confidence_weights": {
       "html": 40,
       "routes": 30,
@@ -16,17 +16,17 @@
   "Cloudflare": {
     "html": ["https://static.cloudflareinsights.com"],
     "routes": ["/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"],
-    "headers": {
+    "headers_patterns": {
       "Server": "cloudflare",
       "cf-ray": "[A-Za-z0-9]-ATL",
       "cf-cache-status": "(HIT|MISS|DINAMYC)",
       "cf-connecting-ip": "\\d+\\.\\d+\\.\\d+\\.\\d+"
     },
-    "cookies": [],
+    "cookies_patterns": [],
     "confidence_weights": {
       "html": 10,
-      "routes": 0,
-      "headers": 90,
+      "routes": 20,
+      "headers": 70,
       "cookies": 0
     }
   }

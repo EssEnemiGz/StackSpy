@@ -9,7 +9,7 @@ import re
 class SourcesPattern(TypedDict):
     html: List[str]
     routes: List[str]
-    headers: Dict[str, str]
+    headers_patterns: Dict[str, str]
     cookies: List[str]
     confidence_weights: Dict[str, int]
 
@@ -17,31 +17,45 @@ with open("sources.json") as f:
     sources_json: Dict[str, SourcesPattern] = json.load(f)
 
 logging.basicConfig(filename='development.log', level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S") 
-results = {}
 
 class Analyzer:
     def __init__(self, tech: str) -> None:
         self.tech = tech
 
     def html_body_parser(self, html_body: str, html_labels: List[str]) -> List:
-        html_key = "|".join(html_labels)
-        in_html = re.search(rf"({html_key})", html_body) # Critical in resources, cause the html may be large
-        if in_html:
-            return [self.tech, True]
+        logging.info("Executing html_body_parser")
+        try:
+            html_key = r"|".join(re.escape(label) for label in html_labels)
+            in_html = re.search(rf"({html_key})", html_body) # Critical in resources, cause the html may be large
+            if in_html:
+                return [self.tech, True]
         
-        return [self.tech, False]
+            return [self.tech, False]
+        except Exception as e:
+            logging.error(f"html_body_parser failed with exception: {e}")
+            raise Exception(e)
 
-    def cookies_analizer(self, cookies: List[str], searched_cookies: List[str]) -> List:
-        confidence = any(cookie in cookies for cookie in searched_cookies)
-        return [self.tech, confidence]
+    def cookies_analizer(self, cookies: List[str], cookies_patterns: List[str]) -> List:
+        logging.info("Executing cookies_analizer")
+        try:
+            confidence = any(c_pattern.lower() in c.lower() for c in cookies for c_pattern in cookies_patterns)
+            return [self.tech, confidence]
+        except Exception as e:
+            logging.error(f"cookies_analizer failed with exception: {e}")
+            raise Exception(e)
 
     def headers_analizer(self, headers: Dict[str, str], searched_headers: Dict[str, str]) -> List:
-        for header_value in headers.values():
-            for searched_value in searched_headers.values():
-                if re.search(header_value, searched_value):
-                    return [self.tech, True]
+        logging.info("Executing headers_analizer")
+        try:
+            for header_value in headers.values():
+                for searched_value in searched_headers.values():
+                    if re.search(searched_value, header_value):
+                        return [self.tech, True]
 
-        return [self.tech, False]
+            return [self.tech, False]
+        except Exception as e:
+            logging.error(f"headers_analizer failed with exception: {e}")
+            raise Exception(e)
 
 class Networking:
     def __init__(self, semaphore) -> None:
@@ -56,27 +70,28 @@ class Networking:
                         return [tech, True]
         except Exception as e:
             logging.error(f"Failed fetch() with exception: {e}")
-            return [tech, False]
+            raise Exception(e)
+
         return [tech, False] 
 
-    async def make_request(self, url: str, main_session) -> Dict:
+    async def make_request(self, url: str, main_session, timeout: int = 2) -> Dict:
         logging.info(f"Starting make_request() in domain {url}")
         try:
             async with self.semaphore:
-                async with main_session.get(url) as response:
+                async with main_session.get(url, timeout=aiohttp.ClientTimeout(total=timeout)) as response:
                     if response.status != 200:
                         logging.error(f"make_request() failed with {response.status} code in {url}")
                      
-                    result: Dict = {
+                    request_result: Dict = {
                         "status": response.status,
                         "headers": dict(response.headers),
-                        "cookies": {k: v.value for k, v in response.cookies.items()},
+                        "cookies": [v for v in response.cookies.values()],
                         "body": await response.text()
                     }
-                    return result
+                    return request_result
         except Exception as e:
             logging.error(f"make_request() failed with exception: {e}")
-            return {}
+            raise Exception(e)
 
 async def summoner(url: str):
     semaphore = asyncio.Semaphore(20)
@@ -93,19 +108,19 @@ async def summoner(url: str):
             checker = Analyzer(tech)
             paths = info.get("routes", [])
             html_labels = info.get("html", [])
-            headers = info.get("headers", [])
-            cookies = info.get("cookies", [])
+            headers_patterns = info.get("headers_patterns", [])
+            cookies_patterns = info.get("cookies_patterns", [])
         
             # Check the HTML
             analized_html = checker.html_body_parser(response.get("body", ""), html_labels)
             actual_structure["html"] = analized_html[1]
 
             # Check the headers
-            analized_headers = checker.headers_analizer(response.get("headers", ""), headers)
+            analized_headers = checker.headers_analizer(response.get("headers", ""), headers_patterns)
             actual_structure["headers"] = analized_headers[1]
 
             # Check the cookies
-            analized_cookies = checker.cookies_analizer(response.get("cookies", ""), cookies)
+            analized_cookies = checker.cookies_analizer(response.get("cookies", ""), cookies_patterns)
             actual_structure["cookies"] = analized_cookies[1]
 
             # Check the paths
@@ -124,10 +139,10 @@ if __name__ == "__main__":
         queue = [summoner(url) for url in url_list]
 
         start_time = time.time()
-        results = await asyncio.gather(*queue)
+        executed = await asyncio.gather(*queue, return_exceptions=True)
         end_time = time.time()
-    
-        print(json.dumps(results, indent=4))
+        
+        print(json.dumps(executed, indent=4))
         print(f"Completed in: {end_time-start_time:.2f}s")
 
     asyncio.run(main())
