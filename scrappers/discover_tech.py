@@ -47,17 +47,17 @@ class Networking:
     def __init__(self, semaphore) -> None:
         self.semaphore: asyncio.locks.Semaphore = semaphore
 
-    async def fetch(self, url: str, main_session, tech: str) -> List[str]:
+    async def fetch(self, url: str, main_session, tech: str) -> List:
         logging.info(f"Starting fetc() in domain {url}")
         try:
             async with self.semaphore:
                 async with main_session.get(url) as response:
                     if response.status != 404:
-                        return [url, tech]
+                        return [tech, True]
         except Exception as e:
             logging.error(f"Failed fetch() with exception: {e}")
-            return []
-        return [] 
+            return [tech, False]
+        return [tech, False] 
 
     async def make_request(self, url: str, main_session) -> Dict:
         logging.info(f"Starting make_request() in domain {url}")
@@ -65,9 +65,8 @@ class Networking:
             async with self.semaphore:
                 async with main_session.get(url) as response:
                     if response.status != 200:
-                        logging.error(f"make_request() failed with {response.status} code")
-                        return {}
-                    
+                        logging.error(f"make_request() failed with {response.status} code in {url}")
+                     
                     result: Dict = {
                         "status": response.status,
                         "headers": dict(response.headers),
@@ -79,50 +78,56 @@ class Networking:
             logging.error(f"make_request() failed with exception: {e}")
             return {}
 
-async def summoner():
-    url = "https://blog.mozilla.org/en"
+async def summoner(url: str):
     semaphore = asyncio.Semaphore(20)
     network = Networking(semaphore)
+    results = {}
     route_tasks = []
-    routes_result = []
-    html_body_results = []
-    headers_results = []
-    cookies_results = []
-
-    start_time = time.time()
+    results.setdefault(url, {})
     async with aiohttp.ClientSession() as session:
         response = await network.make_request(url, session)
         for tech, info in sources_json.items():
+            results[url].setdefault(tech, {})
+            actual_structure = results[url][tech]
+        
             checker = Analyzer(tech)
             paths = info.get("routes", [])
             html_labels = info.get("html", [])
             headers = info.get("headers", [])
             cookies = info.get("cookies", [])
-            
+        
             # Check the HTML
             analized_html = checker.html_body_parser(response.get("body", ""), html_labels)
-            html_body_results.append(analized_html)
+            actual_structure["html"] = analized_html[1]
 
             # Check the headers
             analized_headers = checker.headers_analizer(response.get("headers", ""), headers)
-            headers_results.append(analized_headers)
+            actual_structure["headers"] = analized_headers[1]
 
             # Check the cookies
             analized_cookies = checker.cookies_analizer(response.get("cookies", ""), cookies)
-            cookies_results.append(analized_cookies)
+            actual_structure["cookies"] = analized_cookies[1]
 
             # Check the paths
             for path in paths:
                 route_tasks.append(network.fetch(url+path, session, tech))
 
         routes_result = await asyncio.gather(*route_tasks)
-    end_time = time.time()
-    
-    print(json.dumps(routes_result, indent=4))
-    print(json.dumps(html_body_results, indent=4))
-    print("Headers:", json.dumps(headers_results, indent=4))
-    print(json.dumps(cookies_results, indent=4))
-    print(f"Completed in: {end_time-start_time:.2f}s")
+        for individual_path in routes_result:
+            results[url][individual_path[0]]["routes"] = individual_path[1]
 
-if __name__ == "__main__": 
-    asyncio.run(summoner())
+    return results
+
+if __name__ == "__main__":
+    async def main():
+        url_list = ["https://blog.mozilla.org/en", "https://softkitacademy.com"]
+        queue = [summoner(url) for url in url_list]
+
+        start_time = time.time()
+        results = await asyncio.gather(*queue)
+        end_time = time.time()
+    
+        print(json.dumps(results, indent=4))
+        print(f"Completed in: {end_time-start_time:.2f}s")
+
+    asyncio.run(main())
