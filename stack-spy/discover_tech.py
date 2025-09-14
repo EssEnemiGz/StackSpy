@@ -135,7 +135,7 @@ async def summoner(url: str):
 
 if __name__ == "__main__":
     async def main():
-        url_list = ["https://blog.mozilla.org/en", "https://softkitacademy.com"]
+        url_list = ["https://blog.mozilla.org/en", "https://softkitacademy.com", "https://hiutdenim.co.uk"]
         queue = [summoner(url) for url in url_list]
 
         start_time = time.time()
