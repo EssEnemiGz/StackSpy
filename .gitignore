@@ -4,3 +4,4 @@ venv
 db_data
 ip_data
 stack_spy/development.log
+__pycache__/
